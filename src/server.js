@@ -13,6 +13,9 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Trust Railway proxy
+app.set('trust proxy', 1);
+
 // Supabase client
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -41,10 +44,12 @@ app.use(session({
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
+  proxy: true, // Trust Railway proxy
   cookie: {
     secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000
+    maxAge: 24 * 60 * 60 * 1000,
+    sameSite: 'lax' // Important for OAuth redirects
   }
 }));
 
