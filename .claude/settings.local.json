@@ -11,7 +11,9 @@
       "Bash(railway:*)",
       "Bash(git add:*)",
       "Bash(git commit -m \"$(cat <<''EOF''\nInitial commit: Google OAuth + Supabase authentication service\n\n- Express.js server with Google OAuth 2.0\n- Supabase integration for user management\n- Railway deployment configuration\n- Health check endpoint\n- Session management\n- Security middleware (helmet, cors, rate limiting)\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
-      "Bash(git config:*)"
+      "Bash(git config:*)",
+      "Bash(git push:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []

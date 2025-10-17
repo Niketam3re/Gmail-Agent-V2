@@ -7,6 +7,7 @@ import helmet from 'helmet';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
+import { generateAdminDashboard } from './admin-dashboard.html.js';
 
 dotenv.config();
 
@@ -118,10 +119,20 @@ passport.use(new GoogleStrategy({
   }
 ));
 
+// Admin email - add your email here
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'your-email@gmail.com';
+
 // Middleware
 const isAuthenticated = (req, res, next) => {
   if (req.isAuthenticated()) return next();
   res.redirect('/');
+};
+
+const isAdmin = (req, res, next) => {
+  if (req.isAuthenticated() && req.user.email === ADMIN_EMAIL) {
+    return next();
+  }
+  res.status(403).send('Access denied. Admin only.');
 };
 
 // Routes
@@ -216,115 +227,261 @@ app.get('/auth/google/callback',
 app.get('/dashboard', isAuthenticated, (req, res) => {
   // Check if this is first visit (new registration)
   const isNewUser = req.query.welcome === 'true';
+  const joinDate = new Date(req.user.created_at).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
 
   res.send(`
     <!DOCTYPE html>
     <html>
     <head>
-      <title>Dashboard</title>
+      <title>Dashboard - ${req.user.name}</title>
+      <meta name="viewport" content="width=device-width, initial-scale=1">
       <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-          font-family: system-ui, sans-serif;
-          max-width: 1000px;
-          margin: 0 auto;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          min-height: 100vh;
           padding: 2rem;
-          background: #f5f7fa;
+        }
+        .container {
+          max-width: 1200px;
+          margin: 0 auto;
+        }
+        .header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 2rem;
+          color: white;
+        }
+        .header h1 {
+          font-size: 1.75rem;
+          font-weight: 600;
+        }
+        .logout-btn {
+          background: rgba(255,255,255,0.2);
+          color: white;
+          padding: 10px 20px;
+          border: 2px solid rgba(255,255,255,0.3);
+          border-radius: 8px;
+          cursor: pointer;
+          text-decoration: none;
+          font-weight: 600;
+          transition: all 0.3s;
+        }
+        .logout-btn:hover {
+          background: rgba(255,255,255,0.3);
+          border-color: rgba(255,255,255,0.5);
+        }
+        .success-banner {
+          background: white;
+          color: #10b981;
+          padding: 1.5rem;
+          border-radius: 12px;
+          text-align: center;
+          margin-bottom: 1.5rem;
+          box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+          animation: slideIn 0.5s ease-out;
+          border-left: 4px solid #10b981;
+        }
+        .success-banner h2 {
+          font-size: 1.25rem;
+          margin-bottom: 0.5rem;
+        }
+        @keyframes slideIn {
+          from { transform: translateY(-20px); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
+        }
+        .grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+          gap: 1.5rem;
+          margin-bottom: 1.5rem;
         }
         .card {
           background: white;
           padding: 2rem;
           border-radius: 12px;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-          margin-bottom: 1.5rem;
+          box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+          transition: transform 0.2s;
         }
-        .success-banner {
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          color: white;
-          padding: 2rem;
-          border-radius: 12px;
-          text-align: center;
-          margin-bottom: 1.5rem;
-          animation: slideIn 0.5s ease-out;
+        .card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 6px 12px rgba(0,0,0,0.15);
         }
-        .success-banner h1 {
-          margin: 0 0 0.5rem 0;
-          font-size: 2rem;
-        }
-        .success-banner p {
-          margin: 0;
-          font-size: 1.1rem;
-          opacity: 0.95;
-        }
-        @keyframes slideIn {
-          from {
-            transform: translateY(-20px);
-            opacity: 0;
-          }
-          to {
-            transform: translateY(0);
-            opacity: 1;
-          }
+        .profile-card {
+          grid-column: span 2;
         }
         .profile {
           display: flex;
           align-items: center;
-          gap: 1.5rem;
-          margin-bottom: 1.5rem;
+          gap: 2rem;
         }
         .profile img {
-          width: 80px;
-          height: 80px;
+          width: 100px;
+          height: 100px;
           border-radius: 50%;
+          border: 4px solid #667eea;
         }
-        h1 { margin: 0 0 0.25rem 0; color: #333; }
-        h2 { margin: 0 0 1rem 0; color: #333; }
-        .email { color: #666; font-size: 0.9rem; }
-        .logout-btn {
-          background: #dc3545;
-          color: white;
-          padding: 10px 24px;
-          border: none;
-          border-radius: 8px;
-          cursor: pointer;
-          text-decoration: none;
+        .profile-info h2 {
+          font-size: 1.75rem;
+          color: #333;
+          margin-bottom: 0.5rem;
+        }
+        .profile-info .email {
+          color: #666;
+          font-size: 1rem;
+          margin-bottom: 0.5rem;
+        }
+        .badge {
           display: inline-block;
+          background: #667eea;
+          color: white;
+          padding: 4px 12px;
+          border-radius: 20px;
+          font-size: 0.85rem;
           font-weight: 600;
         }
-        .logout-btn:hover { background: #c82333; }
-        pre {
-          background: #f8f9fa;
-          padding: 1rem;
-          border-radius: 6px;
-          overflow-x: auto;
+        .stat-card {
+          text-align: center;
+        }
+        .stat-card .icon {
+          font-size: 2.5rem;
+          margin-bottom: 1rem;
+        }
+        .stat-card h3 {
+          color: #666;
           font-size: 0.9rem;
+          font-weight: 500;
+          margin-bottom: 0.5rem;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+        .stat-card .value {
+          font-size: 1.5rem;
+          font-weight: 700;
+          color: #333;
+        }
+        .info-section {
+          margin-top: 1rem;
+          padding-top: 1rem;
+          border-top: 1px solid #e5e7eb;
+        }
+        .info-row {
+          display: flex;
+          justify-content: space-between;
+          padding: 0.75rem 0;
+          border-bottom: 1px solid #f3f4f6;
+        }
+        .info-row:last-child { border-bottom: none; }
+        .info-label {
+          color: #666;
+          font-weight: 500;
+        }
+        .info-value {
+          color: #333;
+          font-weight: 600;
+        }
+        @media (max-width: 768px) {
+          .profile-card { grid-column: span 1; }
+          .profile { flex-direction: column; text-align: center; }
         }
       </style>
     </head>
     <body>
-      ${isNewUser ? `
-      <div class="success-banner">
-        <h1>✓ Registration Successful!</h1>
-        <p>Welcome to your account, ${req.user.name}!</p>
-      </div>
-      ` : ''}
-
-      <div class="card">
-        <div class="profile">
-          <img src="${req.user.picture}" alt="Profile">
-          <div>
-            <h1>${req.user.name}</h1>
-            <p class="email">${req.user.email}</p>
+      <div class="container">
+        <div class="header">
+          <h1>👋 Welcome back!</h1>
+          <div style="display: flex; gap: 1rem;">
+            ${req.user.email === ADMIN_EMAIL ? '<a href="/admin" class="logout-btn" style="background: rgba(255,255,255,0.3);">Admin Panel</a>' : ''}
+            <a href="/logout" class="logout-btn">Logout</a>
           </div>
         </div>
-        <a href="/logout" class="logout-btn">Logout</a>
-      </div>
-      <div class="card">
-        <h2>Account Information</h2>
-        <pre>${JSON.stringify(req.user, null, 2)}</pre>
+
+        ${isNewUser ? `
+        <div class="success-banner">
+          <h2>✓ Registration Successful!</h2>
+          <p>Your account has been created successfully. Welcome aboard!</p>
+        </div>
+        ` : ''}
+
+        <div class="grid">
+          <div class="card profile-card">
+            <div class="profile">
+              <img src="${req.user.picture}" alt="Profile">
+              <div class="profile-info">
+                <h2>${req.user.name}</h2>
+                <p class="email">${req.user.email}</p>
+                <span class="badge">${req.user.is_active ? 'Active' : 'Inactive'}</span>
+              </div>
+            </div>
+            <div class="info-section">
+              <div class="info-row">
+                <span class="info-label">Member Since</span>
+                <span class="info-value">${joinDate}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Account ID</span>
+                <span class="info-value">${req.user.id.substring(0, 8)}...</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Status</span>
+                <span class="info-value" style="color: #10b981;">Active</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="card stat-card">
+            <div class="icon">🔐</div>
+            <h3>Authentication</h3>
+            <div class="value">Google OAuth</div>
+          </div>
+
+          <div class="card stat-card">
+            <div class="icon">✅</div>
+            <h3>Account Status</h3>
+            <div class="value">Verified</div>
+          </div>
+        </div>
       </div>
     </body>
     </html>
   `);
+});
+
+// Admin dashboard
+app.get('/admin', isAdmin, async (req, res) => {
+  try {
+    // Fetch all users
+    const { data: users, error } = await supabase
+      .from('users')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    // Calculate stats
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const weekAgo = new Date(today);
+    weekAgo.setDate(weekAgo.getDate() - 7);
+
+    const stats = {
+      totalUsers: users.length,
+      activeUsers: users.filter(u => u.is_active).length,
+      newToday: users.filter(u => new Date(u.created_at) >= today).length,
+      newThisWeek: users.filter(u => new Date(u.created_at) >= weekAgo).length
+    };
+
+    res.send(generateAdminDashboard(users, stats));
+  } catch (error) {
+    console.error('Admin dashboard error:', error);
+    res.status(500).send('Error loading admin dashboard');
+  }
 });
 
 app.get('/logout', (req, res) => {
