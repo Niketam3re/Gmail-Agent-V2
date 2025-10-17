@@ -79,6 +79,8 @@ passport.use(new GoogleStrategy({
         throw fetchError;
       }
 
+      let isNewUser = false;
+
       if (!user) {
         // Create new user
         const { data: newUser, error: insertError } = await supabase
@@ -91,6 +93,7 @@ passport.use(new GoogleStrategy({
 
         if (insertError) throw insertError;
         user = newUser;
+        isNewUser = true;
       } else {
         // Update last login
         await supabase
@@ -98,6 +101,9 @@ passport.use(new GoogleStrategy({
           .update({ last_login: new Date().toISOString() })
           .eq('id', user.id);
       }
+
+      // Add isNewUser flag to user object
+      user.isNewUser = isNewUser;
 
       return done(null, user);
     } catch (error) {
@@ -193,10 +199,19 @@ app.get('/auth/google',
 
 app.get('/auth/google/callback',
   passport.authenticate('google', { failureRedirect: '/' }),
-  (req, res) => res.redirect('/dashboard')
+  (req, res) => {
+    // Redirect to dashboard with welcome flag if new user
+    if (req.user.isNewUser) {
+      return res.redirect('/dashboard?welcome=true');
+    }
+    res.redirect('/dashboard');
+  }
 );
 
 app.get('/dashboard', isAuthenticated, (req, res) => {
+  // Check if this is first visit (new registration)
+  const isNewUser = req.query.welcome === 'true';
+
   res.send(`
     <!DOCTYPE html>
     <html>
@@ -217,6 +232,34 @@ app.get('/dashboard', isAuthenticated, (req, res) => {
           box-shadow: 0 2px 8px rgba(0,0,0,0.1);
           margin-bottom: 1.5rem;
         }
+        .success-banner {
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          padding: 2rem;
+          border-radius: 12px;
+          text-align: center;
+          margin-bottom: 1.5rem;
+          animation: slideIn 0.5s ease-out;
+        }
+        .success-banner h1 {
+          margin: 0 0 0.5rem 0;
+          font-size: 2rem;
+        }
+        .success-banner p {
+          margin: 0;
+          font-size: 1.1rem;
+          opacity: 0.95;
+        }
+        @keyframes slideIn {
+          from {
+            transform: translateY(-20px);
+            opacity: 0;
+          }
+          to {
+            transform: translateY(0);
+            opacity: 1;
+          }
+        }
         .profile {
           display: flex;
           align-items: center;
@@ -229,6 +272,7 @@ app.get('/dashboard', isAuthenticated, (req, res) => {
           border-radius: 50%;
         }
         h1 { margin: 0 0 0.25rem 0; color: #333; }
+        h2 { margin: 0 0 1rem 0; color: #333; }
         .email { color: #666; font-size: 0.9rem; }
         .logout-btn {
           background: #dc3545;
@@ -247,10 +291,18 @@ app.get('/dashboard', isAuthenticated, (req, res) => {
           padding: 1rem;
           border-radius: 6px;
           overflow-x: auto;
+          font-size: 0.9rem;
         }
       </style>
     </head>
     <body>
+      ${isNewUser ? `
+      <div class="success-banner">
+        <h1>✓ Registration Successful!</h1>
+        <p>Welcome to your account, ${req.user.name}!</p>
+      </div>
+      ` : ''}
+
       <div class="card">
         <div class="profile">
           <img src="${req.user.picture}" alt="Profile">
