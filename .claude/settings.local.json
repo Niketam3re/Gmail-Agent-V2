@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e:*)",
+      "Bash(copy \"C:\\Users\\Raf\\Documents\\Gmail Agent V2\\Gmail-Agent-V2\\setup_config_file.txt\" \"C:\\Users\\Raf\\Documents\\Gmail Agent V2\\Gmail-Agent-V2\\setup-config.yaml\")",
+      "Bash(node:*)",
+      "Bash(npm init:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run dev:*)",
+      "Bash(curl:*)",
+      "Bash(railway:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nInitial commit: Google OAuth + Supabase authentication service\n\n- Express.js server with Google OAuth 2.0\n- Supabase integration for user management\n- Railway deployment configuration\n- Health check endpoint\n- Session management\n- Security middleware (helmet, cors, rate limiting)\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git config:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

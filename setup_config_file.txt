@@ -1,0 +1,285 @@
+# ========================================
+# COMPLETE SETUP CONFIGURATION FILE
+# ========================================
+# This file contains all the information needed to automatically
+# set up your Google OAuth + Supabase authentication system.
+#
+# INSTRUCTIONS:
+# 1. Fill in all the values below with your actual credentials
+# 2. Save this file as 'setup-config.yaml'
+# 3. Use this with Claude Code or any automation tool
+# 4. Keep this file SECURE and add it to .gitignore
+# ========================================
+
+project_info:
+  name: "my-auth-service"
+  description: "User registration and authentication service"
+  primary_language: "javascript"
+  framework: "express"
+  deployment_platform: "railway"
+
+# ========================================
+# GOOGLE CLOUD CREDENTIALS
+# ========================================
+# Get these from: https://console.cloud.google.com/apis/credentials
+google_oauth:
+  project_id: "YOUR_GOOGLE_PROJECT_ID"
+  client_id: "YOUR_CLIENT_ID.apps.googleusercontent.com"
+  client_secret: "YOUR_CLIENT_SECRET"
+  
+  # These will be auto-configured after deployment
+  redirect_uris:
+    - "http://localhost:3000/auth/google/callback"  # Development
+    - "https://YOUR_RAILWAY_DOMAIN/auth/google/callback"  # Production (fill after first deploy)
+  
+  scopes:
+    - "profile"
+    - "email"
+    - "openid"
+
+# ========================================
+# SUPABASE CREDENTIALS
+# ========================================
+# Get these from: https://app.supabase.com/project/YOUR_PROJECT/settings/api
+supabase:
+  project_url: "https://hdpbksygdpnvsuoqyfzn.supabase.co"
+  anon_key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhkcGJrc3lnZHBudnN1b3F5ZnpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA1OTQ1ODgsImV4cCI6MjA3NjE3MDU4OH0.cPyQlYKj0Rze_9rd7GIIvvEGRNQkuHrKY9IrbanzrO8"
+  service_role_key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhkcGJrc3lnZHBudnN1b3F5ZnpuIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MDU5NDU4OCwiZXhwIjoyMDc2MTcwNTg4fQ.8RRIog6HEyTdrAROBZYeAKWz9TogadscYwbS2OoegKs"  # Keep this secret!
+  
+  # Database connection (optional, for direct queries)
+  database:
+    host: "db.YOUR_PROJECT_ID.supabase.co"
+    port: 5432
+    database: "postgres"
+    user: "postgres"
+    password: "YOUR_DATABASE_PASSWORD"
+
+# ========================================
+# RAILWAY DEPLOYMENT
+# ========================================
+railway:
+  project_name: "auth-service"
+  region: "us-west1"  # or closest to your users
+  
+  # Environment variables to set
+  environment_variables:
+    NODE_ENV: "production"
+    SESSION_SECRET: "3847ea860ae93b2a320d3c40c8bc5e9a2d28eeba8d32e1873a29375382679738"
+    PORT: "3000"
+
+# ========================================
+# APPLICATION SETTINGS
+# ========================================
+application:
+  session:
+    secret: "3847ea860ae93b2a320d3c40c8bc5e9a2d28eeba8d32e1873a29375382679738"
+    max_age_hours: 24
+    secure_cookies: false  # Set to false for localhost testing
+  
+  features:
+    enable_email_verification: true
+    enable_password_reset: true
+    enable_2fa: false
+    store_refresh_tokens: true
+  
+  allowed_domains:
+    - "localhost:3000"
+    - "YOUR_RAILWAY_DOMAIN"  # Add after deployment
+
+# ========================================
+# DATABASE SCHEMA (for Supabase)
+# ========================================
+# This will be created automatically
+database_schema:
+  tables:
+    - name: "users"
+      columns:
+        - name: "id"
+          type: "uuid"
+          primary_key: true
+          default: "gen_random_uuid()"
+        - name: "google_id"
+          type: "text"
+          unique: true
+          nullable: false
+        - name: "email"
+          type: "text"
+          unique: true
+          nullable: false
+        - name: "name"
+          type: "text"
+          nullable: true
+        - name: "picture"
+          type: "text"
+          nullable: true
+        - name: "created_at"
+          type: "timestamp"
+          default: "now()"
+        - name: "last_login"
+          type: "timestamp"
+          nullable: true
+        - name: "is_active"
+          type: "boolean"
+          default: true
+
+    - name: "sessions"
+      columns:
+        - name: "id"
+          type: "uuid"
+          primary_key: true
+          default: "gen_random_uuid()"
+        - name: "user_id"
+          type: "uuid"
+          references: "users(id)"
+          on_delete: "cascade"
+        - name: "token"
+          type: "text"
+          unique: true
+        - name: "expires_at"
+          type: "timestamp"
+          nullable: false
+        - name: "created_at"
+          type: "timestamp"
+          default: "now()"
+
+# ========================================
+# SECURITY SETTINGS
+# ========================================
+security:
+  rate_limiting:
+    enabled: true
+    max_requests_per_minute: 60
+  
+  cors:
+    enabled: true
+    origins:
+      - "http://localhost:3000"
+      - "https://YOUR_FRONTEND_DOMAIN"
+  
+  helmet:
+    enabled: true
+    content_security_policy: true
+
+# ========================================
+# TESTING CONFIGURATION
+# ========================================
+testing:
+  automated_tests:
+    - test_google_oauth_flow
+    - test_user_creation_in_supabase
+    - test_session_management
+    - test_logout
+    - test_protected_routes
+  
+  test_user:
+    email: "test@example.com"
+    use_for_integration_tests: true
+
+# ========================================
+# MONITORING & LOGGING
+# ========================================
+monitoring:
+  error_tracking:
+    enabled: true
+    service: "sentry"  # or "rollbar", "bugsnag"
+    dsn: "YOUR_SENTRY_DSN"  # Optional
+  
+  logging:
+    level: "info"  # debug, info, warn, error
+    format: "json"
+
+# ========================================
+# POST-DEPLOYMENT STEPS
+# ========================================
+# These steps will be executed automatically after deployment:
+post_deployment:
+  steps:
+    - verify_google_oauth_connection
+    - verify_supabase_connection
+    - create_database_tables
+    - run_integration_tests
+    - verify_health_endpoint
+    - send_deployment_notification
+
+# ========================================
+# TROUBLESHOOTING RULES
+# ========================================
+# Automated fixes for common issues
+troubleshooting:
+  auto_fix_enabled: true
+  
+  rules:
+    - issue: "redirect_uri_mismatch"
+      fix: "update_google_cloud_console_uris"
+      
+    - issue: "supabase_connection_error"
+      fix: "verify_api_keys_and_retry"
+      
+    - issue: "session_not_persisting"
+      fix: "configure_redis_session_store"
+      
+    - issue: "cors_error"
+      fix: "add_origin_to_cors_whitelist"
+      
+    - issue: "railway_build_failure"
+      fix: "check_node_version_and_dependencies"
+
+# ========================================
+# NOTIFICATIONS
+# ========================================
+notifications:
+  deployment_success:
+    enabled: true
+    channels:
+      - "email"
+      - "slack"  # Optional
+  
+  error_alerts:
+    enabled: true
+    severity_threshold: "error"
+
+# ========================================
+# BACKUP & RECOVERY
+# ========================================
+backup:
+  supabase_backups:
+    enabled: true
+    frequency: "daily"
+    retention_days: 30
+  
+  environment_variables:
+    backup_to_vault: true
+
+# ========================================
+# CHECKLIST FOR MANUAL VERIFICATION
+# ========================================
+manual_checklist:
+  before_deployment:
+    - "✓ Google Cloud OAuth credentials configured"
+    - "✓ Supabase project created and API keys obtained"
+    - "✓ Railway account connected"
+    - "✓ All sensitive data in this file filled out"
+    - "✓ This file added to .gitignore"
+  
+  after_deployment:
+    - "✓ Test login flow with personal Google account"
+    - "✓ Verify user appears in Supabase dashboard"
+    - "✓ Test logout functionality"
+    - "✓ Verify session persistence"
+    - "✓ Update Google Cloud Console with production redirect URI"
+
+# ========================================
+# NOTES
+# ========================================
+notes: |
+  IMPORTANT SECURITY REMINDERS:
+  1. Never commit this file to version control
+  2. Store secrets in environment variables or a vault
+  3. Rotate secrets regularly
+  4. Use different credentials for dev/staging/production
+  5. Enable 2FA on all admin accounts
+  
+  SUPPORT:
+  - Supabase docs: https://supabase.com/docs
+  - Railway docs: https://docs.railway.app
+  - Google OAuth docs: https://developers.google.com/identity/protocols/oauth2

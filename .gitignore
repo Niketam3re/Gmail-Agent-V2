@@ -1,0 +1,9 @@
+node_modules/
+.env
+.env.local
+setup-config.yaml
+*.log
+.DS_Store
+dist/
+build/
+.railway/
