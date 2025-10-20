@@ -8,6 +8,7 @@ import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import { generateAdminDashboard } from './admin-dashboard.html.js';
+import { google } from 'googleapis';
 
 dotenv.config();
 
@@ -74,6 +75,9 @@ passport.use(new GoogleStrategy({
       const name = profile.displayName;
       const picture = profile.photos[0]?.value;
 
+      // Calculate token expiry (tokens typically expire in 1 hour)
+      const tokenExpiry = new Date(Date.now() + 3600 * 1000).toISOString();
+
       // Check if user exists
       let { data: user, error: fetchError } = await supabase
         .from('users')
@@ -88,11 +92,19 @@ passport.use(new GoogleStrategy({
       let isNewUser = false;
 
       if (!user) {
-        // Create new user
+        // Create new user with OAuth tokens
         const { data: newUser, error: insertError } = await supabase
           .from('users')
           .insert([
-            { google_id: googleId, email, name, picture }
+            {
+              google_id: googleId,
+              email,
+              name,
+              picture,
+              access_token: accessToken,
+              refresh_token: refreshToken,
+              token_expiry: tokenExpiry
+            }
           ])
           .select()
           .single();
@@ -101,11 +113,25 @@ passport.use(new GoogleStrategy({
         user = newUser;
         isNewUser = true;
       } else {
-        // Update last login
+        // Update last login and OAuth tokens
         await supabase
           .from('users')
-          .update({ last_login: new Date().toISOString() })
+          .update({
+            last_login: new Date().toISOString(),
+            access_token: accessToken,
+            refresh_token: refreshToken || user.refresh_token, // Keep old refresh token if new one not provided
+            token_expiry: tokenExpiry
+          })
           .eq('id', user.id);
+
+        // Fetch updated user
+        const { data: updatedUser } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+
+        user = updatedUser || user;
       }
 
       // Add isNewUser flag to user object
@@ -210,7 +236,16 @@ app.get('/', (req, res) => {
 });
 
 app.get('/auth/google',
-  passport.authenticate('google', { scope: ['profile', 'email'] })
+  passport.authenticate('google', {
+    scope: [
+      'profile',
+      'email',
+      'https://www.googleapis.com/auth/gmail.readonly',
+      'https://www.googleapis.com/auth/gmail.modify'
+    ],
+    accessType: 'offline',
+    prompt: 'consent'
+  })
 );
 
 app.get('/auth/google/callback',
@@ -447,7 +482,102 @@ app.get('/dashboard', isAuthenticated, (req, res) => {
             <div class="value">Verified</div>
           </div>
         </div>
+
+        <div class="card" style="grid-column: span 2;">
+          <h3 style="margin-bottom: 1rem; color: #333;">Gmail Watch Notifications</h3>
+          <p style="color: #666; margin-bottom: 1rem;">Enable real-time notifications for your Gmail inbox</p>
+          <div id="watch-status" style="margin-bottom: 1rem;">
+            <span style="color: #999;">Loading...</span>
+          </div>
+          <button id="toggle-watch" onclick="toggleGmailWatch()" style="
+            background: #667eea;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 1rem;
+            transition: all 0.3s;
+          " onmouseover="this.style.background='#5568d3'" onmouseout="this.style.background='#667eea'">
+            Enable Gmail Watch
+          </button>
+          <div id="watch-message" style="margin-top: 1rem; padding: 12px; border-radius: 8px; display: none;"></div>
+        </div>
       </div>
+
+      <script>
+        let watchEnabled = false;
+
+        // Load Gmail Watch status on page load
+        async function loadWatchStatus() {
+          try {
+            const response = await fetch('/api/gmail/watch/status');
+            const data = await response.json();
+
+            watchEnabled = data.enabled;
+            const statusDiv = document.getElementById('watch-status');
+            const toggleBtn = document.getElementById('toggle-watch');
+
+            if (data.enabled) {
+              const expiresAt = new Date(data.expiresAt);
+              statusDiv.innerHTML = '<span style="color: #10b981; font-weight: 600;">✓ Active</span> - Expires: ' + expiresAt.toLocaleString();
+              toggleBtn.textContent = 'Disable Gmail Watch';
+              toggleBtn.style.background = '#ef4444';
+              toggleBtn.onmouseover = function() { this.style.background = '#dc2626'; };
+              toggleBtn.onmouseout = function() { this.style.background = '#ef4444'; };
+            } else {
+              statusDiv.innerHTML = '<span style="color: #666;">Inactive</span>';
+              toggleBtn.textContent = 'Enable Gmail Watch';
+              toggleBtn.style.background = '#667eea';
+              toggleBtn.onmouseover = function() { this.style.background = '#5568d3'; };
+              toggleBtn.onmouseout = function() { this.style.background = '#667eea'; };
+            }
+          } catch (error) {
+            console.error('Failed to load watch status:', error);
+            document.getElementById('watch-status').innerHTML = '<span style="color: #ef4444;">Error loading status</span>';
+          }
+        }
+
+        async function toggleGmailWatch() {
+          const toggleBtn = document.getElementById('toggle-watch');
+          const messageDiv = document.getElementById('watch-message');
+
+          toggleBtn.disabled = true;
+          toggleBtn.textContent = 'Processing...';
+
+          try {
+            const endpoint = watchEnabled ? '/api/gmail/watch/disable' : '/api/gmail/watch/enable';
+            const response = await fetch(endpoint, { method: 'POST' });
+            const data = await response.json();
+
+            if (data.success) {
+              messageDiv.style.display = 'block';
+              messageDiv.style.background = '#d1fae5';
+              messageDiv.style.color = '#065f46';
+              messageDiv.textContent = data.message;
+
+              // Reload status after 1 second
+              setTimeout(() => {
+                loadWatchStatus();
+                messageDiv.style.display = 'none';
+              }, 2000);
+            } else {
+              throw new Error(data.error || 'Failed to toggle watch');
+            }
+          } catch (error) {
+            messageDiv.style.display = 'block';
+            messageDiv.style.background = '#fee2e2';
+            messageDiv.style.color = '#991b1b';
+            messageDiv.textContent = 'Error: ' + error.message;
+            toggleBtn.disabled = false;
+            toggleBtn.textContent = watchEnabled ? 'Disable Gmail Watch' : 'Enable Gmail Watch';
+          }
+        }
+
+        // Load status when page loads
+        loadWatchStatus();
+      </script>
     </body>
     </html>
   `);
@@ -493,6 +623,217 @@ app.get('/logout', (req, res) => {
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Helper function to get Gmail client
+async function getGmailClient(userId) {
+  const { data: user, error } = await supabase
+    .from('users')
+    .select('access_token, refresh_token, token_expiry')
+    .eq('id', userId)
+    .single();
+
+  if (error || !user) {
+    throw new Error('User not found');
+  }
+
+  const oauth2Client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.CALLBACK_URL
+  );
+
+  oauth2Client.setCredentials({
+    access_token: user.access_token,
+    refresh_token: user.refresh_token
+  });
+
+  // Handle token refresh
+  oauth2Client.on('tokens', async (tokens) => {
+    if (tokens.refresh_token) {
+      await supabase
+        .from('users')
+        .update({
+          access_token: tokens.access_token,
+          refresh_token: tokens.refresh_token,
+          token_expiry: new Date(Date.now() + 3600 * 1000).toISOString()
+        })
+        .eq('id', userId);
+    } else if (tokens.access_token) {
+      await supabase
+        .from('users')
+        .update({
+          access_token: tokens.access_token,
+          token_expiry: new Date(Date.now() + 3600 * 1000).toISOString()
+        })
+        .eq('id', userId);
+    }
+  });
+
+  return google.gmail({ version: 'v1', auth: oauth2Client });
+}
+
+// Activate Gmail Watch
+app.post('/api/gmail/watch/enable', isAuthenticated, async (req, res) => {
+  try {
+    const gmail = await getGmailClient(req.user.id);
+
+    // Set up watch on user's mailbox
+    const watchResponse = await gmail.users.watch({
+      userId: 'me',
+      requestBody: {
+        topicName: process.env.GMAIL_PUBSUB_TOPIC,
+        labelIds: ['INBOX']
+      }
+    });
+
+    // Save watch info to database
+    await supabase
+      .from('users')
+      .update({
+        gmail_watch_enabled: true,
+        gmail_watch_expiration: watchResponse.data.expiration,
+        gmail_history_id: watchResponse.data.historyId
+      })
+      .eq('id', req.user.id);
+
+    res.json({
+      success: true,
+      message: 'Gmail Watch enabled successfully',
+      expiration: watchResponse.data.expiration
+    });
+  } catch (error) {
+    console.error('Gmail Watch error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to enable Gmail Watch',
+      details: error.message
+    });
+  }
+});
+
+// Disable Gmail Watch
+app.post('/api/gmail/watch/disable', isAuthenticated, async (req, res) => {
+  try {
+    const gmail = await getGmailClient(req.user.id);
+
+    // Stop watching
+    await gmail.users.stop({
+      userId: 'me'
+    });
+
+    // Update database
+    await supabase
+      .from('users')
+      .update({
+        gmail_watch_enabled: false,
+        gmail_watch_expiration: null
+      })
+      .eq('id', req.user.id);
+
+    res.json({
+      success: true,
+      message: 'Gmail Watch disabled successfully'
+    });
+  } catch (error) {
+    console.error('Gmail Watch disable error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to disable Gmail Watch',
+      details: error.message
+    });
+  }
+});
+
+// Get Gmail Watch status
+app.get('/api/gmail/watch/status', isAuthenticated, async (req, res) => {
+  try {
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('gmail_watch_enabled, gmail_watch_expiration')
+      .eq('id', req.user.id)
+      .single();
+
+    if (error) throw error;
+
+    res.json({
+      enabled: user.gmail_watch_enabled || false,
+      expiration: user.gmail_watch_expiration,
+      expiresAt: user.gmail_watch_expiration
+        ? new Date(parseInt(user.gmail_watch_expiration)).toISOString()
+        : null
+    });
+  } catch (error) {
+    console.error('Gmail Watch status error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get Gmail Watch status'
+    });
+  }
+});
+
+// Webhook endpoint for Gmail push notifications
+app.post('/api/gmail/webhook', express.json(), async (req, res) => {
+  try {
+    // Acknowledge receipt immediately
+    res.status(200).send('OK');
+
+    // Process the notification
+    const message = req.body.message;
+    if (!message || !message.data) {
+      console.log('Invalid webhook payload');
+      return;
+    }
+
+    // Decode the Pub/Sub message
+    const decodedData = Buffer.from(message.data, 'base64').toString();
+    const notification = JSON.parse(decodedData);
+
+    console.log('Gmail notification received:', notification);
+
+    // Find user by email
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', notification.emailAddress)
+      .single();
+
+    if (error || !user) {
+      console.log('User not found for email:', notification.emailAddress);
+      return;
+    }
+
+    // Get Gmail client
+    const gmail = await getGmailClient(user.id);
+
+    // Fetch history since last known historyId
+    const historyResponse = await gmail.users.history.list({
+      userId: 'me',
+      startHistoryId: user.gmail_history_id || notification.historyId
+    });
+
+    // Update the history ID
+    await supabase
+      .from('users')
+      .update({ gmail_history_id: notification.historyId })
+      .eq('id', user.id);
+
+    // Process the history changes
+    if (historyResponse.data.history) {
+      console.log(`Processing ${historyResponse.data.history.length} history changes for ${user.email}`);
+
+      // Here you can add custom logic to process the email changes
+      // For example: messagesAdded, messagesDeleted, labelsAdded, labelsRemoved
+      for (const historyItem of historyResponse.data.history) {
+        if (historyItem.messagesAdded) {
+          console.log(`New messages: ${historyItem.messagesAdded.length}`);
+          // Process new messages here
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Webhook processing error:', error);
+  }
 });
 
 // Error handling
