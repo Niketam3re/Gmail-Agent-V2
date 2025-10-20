@@ -489,17 +489,26 @@ app.get('/dashboard', isAuthenticated, (req, res) => {
           <div id="watch-status" style="margin-bottom: 1rem;">
             <span style="color: #999;">Loading...</span>
           </div>
-          <button id="toggle-watch" onclick="toggleGmailWatch()" style="
-            background: #667eea;
-            color: white;
-            padding: 12px 24px;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 1rem;
-            transition: all 0.3s;
-          " onmouseover="this.style.background='#5568d3'" onmouseout="this.style.background='#667eea'">
+          <button
+            id="toggle-watch"
+            type="button"
+            onclick="toggleGmailWatch()"
+            style="
+              background: #667eea;
+              color: white;
+              padding: 12px 24px;
+              border: none;
+              border-radius: 8px;
+              cursor: pointer;
+              font-weight: 600;
+              font-size: 1rem;
+              transition: all 0.3s;
+              pointer-events: auto;
+              position: relative;
+              z-index: 1;
+            "
+            onmouseover="this.style.background='#5568d3'; console.log('[Gmail Watch] Mouse over button');"
+            onmouseout="this.style.background='#667eea';">
             Enable Gmail Watch
           </button>
           <div id="watch-message" style="margin-top: 1rem; padding: 12px; border-radius: 8px; display: none;"></div>
@@ -507,17 +516,30 @@ app.get('/dashboard', isAuthenticated, (req, res) => {
       </div>
 
       <script>
+        console.log('[Gmail Watch] Script loaded');
         let watchEnabled = false;
 
         // Load Gmail Watch status on page load
         async function loadWatchStatus() {
+          console.log('[Gmail Watch] Loading status...');
+          const toggleBtn = document.getElementById('toggle-watch');
+          const statusDiv = document.getElementById('watch-status');
+
           try {
+            // Make sure button is enabled
+            toggleBtn.disabled = false;
+
             const response = await fetch('/api/gmail/watch/status');
+            console.log('[Gmail Watch] Status response:', response.status);
+
+            if (!response.ok) {
+              throw new Error('HTTP ' + response.status);
+            }
+
             const data = await response.json();
+            console.log('[Gmail Watch] Status data:', data);
 
             watchEnabled = data.enabled;
-            const statusDiv = document.getElementById('watch-status');
-            const toggleBtn = document.getElementById('toggle-watch');
 
             if (data.enabled) {
               const expiresAt = new Date(data.expiresAt);
@@ -533,13 +555,18 @@ app.get('/dashboard', isAuthenticated, (req, res) => {
               toggleBtn.onmouseover = function() { this.style.background = '#5568d3'; };
               toggleBtn.onmouseout = function() { this.style.background = '#667eea'; };
             }
+
+            console.log('[Gmail Watch] Status loaded successfully. Button clickable:', !toggleBtn.disabled);
           } catch (error) {
-            console.error('Failed to load watch status:', error);
-            document.getElementById('watch-status').innerHTML = '<span style="color: #ef4444;">Error loading status</span>';
+            console.error('[Gmail Watch] Failed to load watch status:', error);
+            statusDiv.innerHTML = '<span style="color: #ef4444;">Error loading status: ' + error.message + '</span>';
+            // Make sure button is still enabled even on error
+            toggleBtn.disabled = false;
           }
         }
 
         async function toggleGmailWatch() {
+          console.log('[Gmail Watch] Button clicked! Current state:', watchEnabled ? 'enabled' : 'disabled');
           const toggleBtn = document.getElementById('toggle-watch');
           const messageDiv = document.getElementById('watch-message');
 
@@ -548,35 +575,62 @@ app.get('/dashboard', isAuthenticated, (req, res) => {
 
           try {
             const endpoint = watchEnabled ? '/api/gmail/watch/disable' : '/api/gmail/watch/enable';
+            console.log('[Gmail Watch] Calling endpoint:', endpoint);
+
             const response = await fetch(endpoint, { method: 'POST' });
+            console.log('[Gmail Watch] Response status:', response.status);
+
             const data = await response.json();
+            console.log('[Gmail Watch] Response data:', data);
 
             if (data.success) {
               messageDiv.style.display = 'block';
               messageDiv.style.background = '#d1fae5';
               messageDiv.style.color = '#065f46';
-              messageDiv.textContent = data.message;
+              messageDiv.innerHTML = '<strong>✓ Success!</strong><br>' + data.message;
 
-              // Reload status after 1 second
+              // Reload status after 2 seconds
               setTimeout(() => {
                 loadWatchStatus();
                 messageDiv.style.display = 'none';
               }, 2000);
             } else {
-              throw new Error(data.error || 'Failed to toggle watch');
+              // Handle error response from server
+              messageDiv.style.display = 'block';
+              messageDiv.style.background = '#fee2e2';
+              messageDiv.style.color = '#991b1b';
+              messageDiv.style.borderLeft = '4px solid #dc2626';
+              messageDiv.innerHTML = '<strong>✗ ' + (data.error || 'Error') + '</strong><br>' +
+                                     (data.details || 'Please try again or check the server logs.');
+              toggleBtn.disabled = false;
+              toggleBtn.textContent = watchEnabled ? 'Disable Gmail Watch' : 'Enable Gmail Watch';
             }
           } catch (error) {
+            console.error('[Gmail Watch] Error:', error);
             messageDiv.style.display = 'block';
             messageDiv.style.background = '#fee2e2';
             messageDiv.style.color = '#991b1b';
-            messageDiv.textContent = 'Error: ' + error.message;
+            messageDiv.style.borderLeft = '4px solid #dc2626';
+            messageDiv.innerHTML = '<strong>✗ Connection Error</strong><br>Failed to communicate with server. Please check your connection and try again.';
             toggleBtn.disabled = false;
             toggleBtn.textContent = watchEnabled ? 'Disable Gmail Watch' : 'Enable Gmail Watch';
           }
         }
 
+        // Test if button is accessible
+        window.addEventListener('DOMContentLoaded', () => {
+          console.log('[Gmail Watch] DOM loaded');
+          const testBtn = document.getElementById('toggle-watch');
+          console.log('[Gmail Watch] Button element:', testBtn);
+          console.log('[Gmail Watch] Button disabled?', testBtn ? testBtn.disabled : 'button not found');
+        });
+
         // Load status when page loads
-        loadWatchStatus();
+        try {
+          loadWatchStatus();
+        } catch (error) {
+          console.error('[Gmail Watch] Failed to load initial status:', error);
+        }
       </script>
     </body>
     </html>
@@ -676,8 +730,47 @@ async function getGmailClient(userId) {
 // Activate Gmail Watch
 app.post('/api/gmail/watch/enable', isAuthenticated, async (req, res) => {
   try {
+    console.log(`[Gmail Watch] Enable request from user: ${req.user.email}`);
+
+    // Check if GMAIL_PUBSUB_TOPIC is configured
+    if (!process.env.GMAIL_PUBSUB_TOPIC) {
+      console.error('[Gmail Watch] GMAIL_PUBSUB_TOPIC environment variable not set');
+      return res.status(500).json({
+        success: false,
+        error: 'Gmail Watch is not configured',
+        details: 'GMAIL_PUBSUB_TOPIC environment variable is missing. Please check your configuration.'
+      });
+    }
+
+    // Check if user has OAuth tokens
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('access_token, refresh_token')
+      .eq('id', req.user.id)
+      .single();
+
+    if (userError || !userData) {
+      console.error('[Gmail Watch] Failed to fetch user data:', userError);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to fetch user data',
+        details: userError?.message || 'User not found'
+      });
+    }
+
+    if (!userData.access_token || !userData.refresh_token) {
+      console.error('[Gmail Watch] User missing OAuth tokens:', req.user.email);
+      return res.status(400).json({
+        success: false,
+        error: 'Gmail permissions not granted',
+        details: 'Please log out and log in again to grant Gmail access permissions.'
+      });
+    }
+
+    console.log('[Gmail Watch] Getting Gmail client...');
     const gmail = await getGmailClient(req.user.id);
 
+    console.log('[Gmail Watch] Setting up watch with topic:', process.env.GMAIL_PUBSUB_TOPIC);
     // Set up watch on user's mailbox
     const watchResponse = await gmail.users.watch({
       userId: 'me',
@@ -687,8 +780,10 @@ app.post('/api/gmail/watch/enable', isAuthenticated, async (req, res) => {
       }
     });
 
+    console.log('[Gmail Watch] Watch enabled successfully. Expiration:', watchResponse.data.expiration);
+
     // Save watch info to database
-    await supabase
+    const { error: updateError } = await supabase
       .from('users')
       .update({
         gmail_watch_enabled: true,
@@ -697,17 +792,42 @@ app.post('/api/gmail/watch/enable', isAuthenticated, async (req, res) => {
       })
       .eq('id', req.user.id);
 
+    if (updateError) {
+      console.error('[Gmail Watch] Failed to update database:', updateError);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to save watch status',
+        details: updateError.message
+      });
+    }
+
     res.json({
       success: true,
       message: 'Gmail Watch enabled successfully',
       expiration: watchResponse.data.expiration
     });
   } catch (error) {
-    console.error('Gmail Watch error:', error);
+    console.error('[Gmail Watch] Error:', error);
+
+    // Provide more specific error messages
+    let errorMessage = 'Failed to enable Gmail Watch';
+    let errorDetails = error.message;
+
+    if (error.message.includes('invalid_grant')) {
+      errorMessage = 'Gmail permissions expired';
+      errorDetails = 'Please log out and log in again to re-authorize Gmail access.';
+    } else if (error.message.includes('Pub/Sub')) {
+      errorMessage = 'Pub/Sub configuration error';
+      errorDetails = 'Please check your Google Cloud Pub/Sub setup. See GMAIL_WATCH_SETUP.md for details.';
+    } else if (error.code === 403) {
+      errorMessage = 'Permission denied';
+      errorDetails = 'Gmail API access denied. Please check your Google Cloud Console settings.';
+    }
+
     res.status(500).json({
       success: false,
-      error: 'Failed to enable Gmail Watch',
-      details: error.message
+      error: errorMessage,
+      details: errorDetails
     });
   }
 });
